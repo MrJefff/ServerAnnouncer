@@ -5,74 +5,98 @@ using Oxide.Core.Libraries.Covalence;
 
 namespace Oxide.Plugins
 {
-    [Info("Server Announcer", "austinv900", "1.0.3", ResourceId = 2198)]
+    [Info("Server Announcer", "austinv900", "1.0.4", ResourceId = 2198)]
     [Description("Allows you to send messages as the server with custom prefix")]
-
-    class ServerAnnouncer : CovalencePlugin
+    public class ServerAnnouncer : CovalencePlugin
     {
-        #region Oxide Hooks
-        void Init()
+        #region  Initialization
+
+        private const string Permission = "ServerAnnouncer.Allowed";
+
+#if (Blackwake || Blockstorm || FromTheDepths || GangBeasts || SavageLands)
+        private void Init()
         {
-            LoadDefaultConfig();
-            LoadDefaultMessages();
+            throw new NotSupportedException("This plugin is not supported with this game");
+        }
+#endif
+
+        private void OnServerInitialized()
+        {
+            LoadConfig();
             permission.RegisterPermission(Permission, this);
         }
+
         #endregion
 
         #region Configuration
-        string ServerName;
-        string Permission = "serverannouncer.";
-        protected override void LoadDefaultConfig()
+
+        public static class Configuration
         {
-            SetConfig("Server Chat Name", "[ServerConsole]");
-            SetConfig("Permission", "allowed");
-            SaveConfig();
-            ServerName = GetConfig("[ServerConsole]", "Server Chat Name");
-            Permission += GetConfig("allowed", "Permission");
+            public static string ConsoleName = "[ServerConsole]";
         }
+
+        protected override void LoadDefaultConfig() => PrintWarning("Generating new configuration file");
+
+        private new void LoadConfig()
+        {
+            GetConfig(ref Configuration.ConsoleName, "General", "ConsoleName");
+            SaveConfig();
+        }
+
         #endregion
 
         #region Localizations
-        void LoadDefaultMessages()
+
+        protected override void LoadDefaultMessages()
         {
             lang.RegisterMessages(new Dictionary<string, string>()
             {
                 ["MessageFormat"] = "{0}: {1}",
                 ["NoAccess"] = "You are not allowed to use this command",
                 ["NoMessage"] = "You did not specify a message"
-            }, this);
+            }, this, "en");
         }
+
         #endregion
 
         #region Commands
-        [Command("say")]
-        void cmdSay(IPlayer pl, string command, string[] args)
+
+        [Command("say", "server.say")]
+        private void Say(IPlayer player, string command, string[] args)
         {
-            if (!IsAdmin(pl)) { pl.Reply(Lang("NoAccess", pl)); return; }
-            if (args.Length == 0) { pl.Reply(Lang("NoMessage", pl)); return; }
+            if (!IsAdmin(player)) { player.Reply(Lang("NoAccess", player)); return; }
 
-            var msg = string.Join(" ", args);
+            if (args.Length == 0) { player.Reply(Lang("NoMessage", player)); return; }
 
-            ServerSay(msg);
-        }
-        #endregion
-
-        #region Plugin Methods;
-        void ServerSay(string message)
-        {
-            foreach (var pl in players.Connected)
+            foreach (var user in players.Connected)
             {
-                pl.Reply(Lang("MessageFormat", pl, ServerName, message));
+                var msg = Lang("MessageFormat", user, Configuration.ConsoleName, string.Join(" ", args));
+                user.Reply(msg);
             }
         }
+
         #endregion
 
         #region Helpers
-        bool IsAdmin(IPlayer player) => permission.UserHasGroup(player.Id, "admin") || permission.UserHasPermission(player.Id, Permission) || player.IsAdmin;
-        string Lang(string Key, IPlayer player, params object[] args) => string.Format(lang.GetMessage(Key, this, player.Id), args);
-        string ListToString<T>(List<T> list, int first = 0, string seperator = ", ") => string.Join(seperator, (from val in list select val.ToString()).Skip(first).ToArray());
-        void SetConfig(params object[] args) { List<string> stringArgs = (from arg in args select arg.ToString()).ToList(); stringArgs.RemoveAt(args.Length - 1); if (Config.Get(stringArgs.ToArray()) == null) Config.Set(args); }
-        T GetConfig<T>(T defaultVal, params object[] args) { List<string> stringArgs = (from arg in args select arg.ToString()).ToList(); if (Config.Get(stringArgs.ToArray()) == null) { PrintError($"The plugin failed to read something from the config: {ListToString(stringArgs, 0, "/")}{Environment.NewLine}Please reload the plugin and see if this message is still showing. If so, please post this into the support thread of this plugin."); return defaultVal; } return (T)System.Convert.ChangeType(Config.Get(stringArgs.ToArray()), typeof(T)); }
+
+        private bool IsAdmin(IPlayer player) => permission.UserHasGroup(player.Id, "admin") || permission.UserHasPermission(player.Id, Permission) || player.IsAdmin;
+
+        private string Lang(string key, IPlayer player, params object[] args) => string.Format(lang.GetMessage(key, this, player.Id), args);
+
+        private void GetConfig<T>(ref T variable, params string[] path)
+        {
+            if (path.Length == 0)
+                return;
+
+            if (Config.Get(path) == null)
+            {
+                Config.Set(path.Concat(new object[] { variable }).ToArray());
+                PrintWarning($"Added field to config: {string.Join("/", path)}");
+            }
+
+            variable = (T)Convert.ChangeType(Config.Get(path), typeof(T));
+        }
+
         #endregion
     }
 }
